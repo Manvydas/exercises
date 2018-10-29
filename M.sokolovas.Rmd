@@ -1,0 +1,193 @@
+---
+title: "2nd & 3rd tasks"
+author: "Manvydas Sokolovas"
+date: "10/29/2018"
+output: pdf_document
+editor_options: 
+  chunk_output_type: console
+---
+
+## 2) DATA VISUALIZATION TASK
+
+```{r, include = F}
+library(lubridate)
+library(data.table)
+library(ggplot2)
+```
+
+```{r, echo = F}
+data_full <- fread("bank/bank-full.csv")
+data_full$cont <- ifelse(data_full$pdays != (-1), "Contacted", "Not_contacted") # customer who were contacted before marked with 1 and else with 0
+data_full$cont <- as.factor(data_full$cont)
+
+ggplot(data_full, aes(x = y, fill = y)) + geom_bar() +
+  facet_wrap( ~ cont, scales = "free_y") +
+  labs(x = "Subscribed a term deposit", title = "Frequency distribution") +
+  theme(legend.position = "none")
+```
+
+* Clients who were contacted before have way better subscribtion a term deposit ratio.
+
+```{r, echo = F}
+ggplot(data_full, aes(x = y, y = duration, col = y)) + geom_boxplot() + scale_colour_brewer(palette="Dark2") +
+  facet_wrap( ~ cont) +
+  labs(x = "Term deposit", y = "Last contact duration in seconds", title = "Last contact duration by term deposit subscribtion") +
+  theme(legend.position = "none")
+```
+
+* Last contact duration with clients who were not contacted before looks more spreaded. It could be because they needed more information or just because there are 5 times more data points. In both cases clients who subscribed a term deposit had longer contacts.
+
+```{r, echo = F}
+duom1 <- data_full
+duom1[duom1$education == "unknown"] <- NA # deleting "unknown" values
+duom1[duom1$job == "unknown"] <- NA # deleting "unknown" values
+duom1 <- na.omit(duom1)
+
+ggplot(duom1, aes(x = y, y = duration, col = y)) + geom_boxplot() + scale_colour_brewer(palette="Dark2") +
+  facet_wrap( ~ education) +
+  labs(x = "Term deposit", y = "Last contact duration in seconds", title = "Last contact duration by subscribtion a term deposit") +
+  theme(legend.position = "none")
+```
+
+* Boxplots covers each other. That means they have some similar points. But we can see that clients who subscribed a term deposit had longer last contact duration and more educated people had a slightly shorter contact.
+
+```{r, echo = F}
+ggplot(duom1, aes(x = job, fill = education)) + geom_bar(position = "fill") + scale_fill_brewer(palette = "Dark2") +
+  facet_wrap( ~ cont, scales = "free_y") +
+  labs(x = "job", title = "Frequency distribution") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+* It's easy to see that people with better education have more qualified jobs. Very low percentage of blue-collar workers have tertiary education and more than 80% of management workers have tertiary education. Target groups did not change after previous campaign.
+
+## 3) MODELLING TASK
+
+```{r, echo = F}
+duom2 <- data_full[cont == "Contacted"] # choosing customers who were contacted before
+duom2[duom2 == "unknown"] <- NA # deleting "unknown" values
+duom2 <- na.omit(duom2)
+
+duom2$y <- ifelse(duom2$y == "yes", 1, 0) # replace target variables if yes with 1 and no with 0
+duom2$y <- as.factor(duom2$y)
+
+duom2$job <- ifelse(duom2$job %in% c("blue-collar", "services", "housemaid"), 1, 0) # lower education jobs - 1 else 0
+duom2$job <- as.factor(duom2$job)
+
+
+duom2[, "date" := ymd(paste(2011, duom2$month, duom2$day))] # creating date variable
+duom2[, "day_of_week" := weekdays(duom2$date)] # day of week variable
+
+duom2$day_of_week <- ifelse(duom2$day_of_week == "Monday", 1, 0) # replace target variables if Monday with 1 and else with 0
+duom2$day_of_week <- as.factor(duom2$day_of_week)
+
+duom2$season <- ifelse(duom2$month %in% c("march", "apr", "may"), "spring",
+                       ifelse(duom2$month %in% c("jun", "jul", "aug"), "summer",
+                              ifelse(duom2$month %in% c("sep", "dec", "oct"), "autumn", "winter")))
+
+duom2 <- duom2[, !c("age", "cont", "poutcome", "date", "day", "month")]
+
+n <- floor(nrow(duom2) * 0.75) # 75% of data for training set
+index <- sample(seq_len(nrow(duom2)), size = n)
+
+train <- duom2[index, ]
+test <- duom2[-index, ]
+
+modelis1 <- glm(y ~ job + education + housing + loan + contact + day_of_week + season + duration + campaign + pdays, family = binomial(link = "logit"), data = train)
+```
+
+### Model summary for previously contacted customers
+
+```{r, echo = F}
+summary(modelis1)
+```
+
+* We can see that majority of chosen variables are significant. There is a strong connection between y and housing loan (if person have housing loan then there is lower chances that he will subscribe a term deposit), there are less subscriptions in spring and winter. Negative estimate values lowers the probability that person will subscribe a term deposit.
+
+### Anova
+
+```{r, echo = F}
+anova(modelis1, test = "Chisq")
+```
+
+* From chi square values we can figure out the significance of each variable.
+
+### Model accuracy
+
+```{r, echo = F}
+fitted.results <- predict(modelis1, newdata=subset(test), type = "response")
+fitted.results <- ifelse(fitted.results > 0.5, 1, 0)
+misClasificError <- mean(fitted.results != test$y)
+print(paste("Accuracy", round(1-misClasificError, 4)))
+```
+
+* Model predicts pretty good. About 80% of trial data were predicted correctly.
+
+
+```{r, echo = F}
+duom3 <- data_full[cont == "Not_contacted"] # choosing customers who were not contacted before
+duom3 <- duom3[, !c("pdays", "previous", "poutcome", "cont")]
+
+duom3[duom3 == "unknown"] <- NA # deleting "unknown" values
+duom3 <- na.omit(duom3)
+
+duom3$y <- ifelse(duom3$y == "yes", 1, 0) # replace target variables if yes with 1 and no with 0
+duom3$y <- as.factor(duom3$y)
+
+duom3$job <- ifelse(duom3$job %in% c("blue-collar", "services", "housemaid"), 1, 0) # lower education jobs - 1 else 0
+duom3$job <- as.factor(duom3$job)
+
+duom3[, "date" := ymd(paste(2011, duom3$month, duom3$day))] # creating date variable
+duom3[, "day_of_week" := weekdays(duom3$date)] # day of week variable
+
+duom3$season <- ifelse(duom3$month %in% c("march", "apr", "may"), "spring",
+                       ifelse(duom3$month %in% c("jun", "jul", "aug"), "summer",
+                              ifelse(duom3$month %in% c("sep", "dec", "oct"), "autumn", "winter")))
+
+duom3[, "ageclass" := factor(cut(age, breaks = c(min(age), 34, 50, 70, max(age))))] # new variable with age groups
+n <- floor(nrow(duom3) * 0.75) # 75% of data for training set
+index <- sample(seq_len(nrow(duom3)), size = n)
+
+train2 <- duom3[index, ]
+test2 <- duom3[-index, ]
+
+# modelis22 <- glm(y ~ . - day - date , family = binomial(link = "logit"), data = train2)
+# step(modelis22)
+
+modelis2 <- glm(formula = y ~ job + marital + education + balance + housing + loan + contact + month + duration + campaign + day_of_week + ageclass, family = binomial(link = "logit"), data = train2) # variables chosen by stepAIC
+```
+
+### Model summary for previously not contacted customers
+
+```{r, echo = F}
+summary(modelis2)
+```
+
+* Variables for this model were chosen by stepAIC. Most of them are statisticaly significant.
+
+### Anova
+
+```{r, echo = F}
+anova(modelis2, test = "Chisq")
+```
+
+* From chi square values we can figure out the significance of each variable.
+
+### Model accuracy
+
+```{r, echo = F}
+fitted.results <- predict(modelis2, newdata = subset(test2), type = "response")
+fitted.results <- ifelse(fitted.results > 0.5, 1, 0)
+misClasificError <- mean(fitted.results != test$y)
+print(paste("Accuracy", round(1-misClasificError, 4)))
+```
+
+* Model predicts pretty good. About 85% of trial data were predicted correctly.
+
+
+
+
+
+
+
+
+

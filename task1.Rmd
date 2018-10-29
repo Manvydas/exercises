@@ -1,0 +1,67 @@
+---
+title: "task1"
+author: "Manvydas Sokolovas"
+date: "10/29/2018"
+output: pdf_document
+---
+
+```{r}
+library(data.table) # data.table package will be used to complete most of the tasks
+data_full <- fread("bank/bank-full.csv")
+data <- fread("bank/bank.csv")
+
+## 1. -----
+n <- round(nrow(data_full)*0.1, 0) # 10% of data
+smpl <- data_full[sample(.N, n)]
+
+## 2. -----
+duom <- data_full[pdays != (-1)] # choosing customers who were contacted before
+duom[duom == "unknown"] <- NA
+duom <- na.omit(duom)
+
+x1 <- duom[!job %in% c("unemployed", "retired", "student") & balance > 0 & housing == "no" & loan == "no"] # works, positive balance, no loan (housing and personal)
+head(x1)
+
+## 3. -----
+x2 <- duom[, !c("housing", "default")]
+head(x2)
+a <- NULL; a$ncol1 <- ncol(duom); a$ncol2 <- ncol(x2); a # two columns were deleted
+
+setnames(x1, c("housing", "y"), c("housingloan", "termdep")) # renaming two variables
+
+## 4. -----
+
+table(duom$y) # shows how many people are subsribed a term deposit and how many are not
+
+round(prop.table(table(duom$job, duom$y), margin = 1), 3) # percentages by type of job (each row sums to 1). We can see what each job group tends to choose more and compare choises between groups
+
+round(prop.table(table(duom$education, duom$y), margin = 1), 3) # percentages by education (each row sums to 1). It kinda shows that people who have higher education level intends to subscribe a term deposit a bit more
+
+
+dat <- as.data.frame(duom)
+q <- sapply(dat, class)
+x3 <- dat[, noquote(q == "numeric") | (q == "integer")] # choosing numeric or integer class variables for summary statistics
+summary(x3, digits = 5)
+
+pp <- seq(0.1, 0.90, 0.1)
+sapply(x3, quantile, probs = pp) # quantiles
+
+duom[, .(median(duration), mean(balance)), by = .(housing, job)] #  median of last contact durations and average balance by people who have housing loan or not and by their job categories
+
+
+## 5. -----
+library(lubridate)
+duom[, "date" := ymd(paste(2011, duom$month, duom$day))] # creating date variable
+duom[, "day_of_week" := weekdays(duom$date)] # day of week variable
+
+duom[, "birthdate" := 2011-age] # calculating birth date from age variable
+
+duom[, "ageclass" := factor(cut(age, breaks = c(min(age), 34, 50, 70, max(age))))] # new variable with age groups
+table(duom$ageclass)
+
+## 6. -----
+x4 <- duom[order(rank(job), -balance, age)] # ordering data by job, balance and age. Jobs by alphabet, balance - descending, age - ascending.
+head(x4)
+
+
+```
